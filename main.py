@@ -53,6 +53,129 @@ async def get_stock_data(symbol: str, period: str = "3mo"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/compare/{symbols}/{period}")
+async def compare_stocks(symbols: str, period: str = "3mo"):
+    """Compare multiple stocks side by side. Symbols should be comma-separated."""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        
+        if len(symbol_list) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 symbols required for comparison")
+        
+        if len(symbol_list) > 5:
+            raise HTTPException(status_code=400, detail="Maximum 5 symbols allowed for comparison")
+        
+        comparison_data = []
+        
+        for symbol in symbol_list:
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                history = ticker.history(period=period)
+                
+                if history.empty:
+                    continue
+                
+                # Calculate percentage change from first day for normalization
+                first_close = history['Close'].iloc[0]
+                history['Normalized'] = ((history['Close'] - first_close) / first_close * 100)
+                
+                # Get latest metrics
+                latest = history.iloc[-1]
+                
+                comparison_data.append({
+                    "symbol": symbol,
+                    "name": info.get('longName', symbol),
+                    "current_price": float(latest['Close']),
+                    "change_percent": float(history['Normalized'].iloc[-1]),
+                    "volume": int(latest['Volume']),
+                    "market_cap": info.get('marketCap'),
+                    "pe_ratio": info.get('forwardPE'),
+                    "history": [
+                        {
+                            "date": date.strftime("%Y-%m-%d"),
+                            "close": float(row['Close']),
+                            "normalized": float(row['Normalized'])
+                        }
+                        for date, row in history.iterrows()
+                    ]
+                })
+            except Exception as e:
+                print(f"Error fetching data for {symbol}: {e}")
+                continue
+        
+        if not comparison_data:
+            raise HTTPException(status_code=404, detail="No valid stock data found")
+        
+        return {
+            "symbols": symbol_list,
+            "period": period,
+            "stocks": comparison_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/compare/chart/{symbols}/{period}")
+async def get_comparison_chart(symbols: str, period: str = "3mo"):
+    """Generate comparison chart for multiple stocks."""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        
+        if len(symbol_list) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 symbols required for comparison")
+        
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
+        
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+        
+        for i, symbol in enumerate(symbol_list):
+            try:
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period=period)
+                
+                if data.empty:
+                    continue
+                
+                # Normalize to percentage change from first day
+                first_close = data['Close'].iloc[0]
+                normalized = ((data['Close'] - first_close) / first_close * 100)
+                
+                color = colors[i % len(colors)]
+                
+                # Price chart (normalized)
+                ax1.plot(data.index, normalized, label=f'{symbol}', linewidth=2, color=color)
+                
+                # Volume chart
+                ax2.bar(data.index, data['Volume'], alpha=0.6, label=f'{symbol} Volume', color=color)
+                
+            except Exception as e:
+                print(f"Error plotting {symbol}: {e}")
+                continue
+        
+        ax1.set_title('Stock Price Comparison (Normalized % Change)', fontsize=14, fontweight='bold')
+        ax1.set_ylabel('Percentage Change (%)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        ax1.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+        
+        ax2.set_title('Volume Comparison', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('Volume')
+        ax2.set_xlabel('Date')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        plt.close()
+        
+        return {"chart": img_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/macd/{symbol}/{period}")
 async def get_macd_chart(symbol: str, period: str = "3mo"):
     try:
