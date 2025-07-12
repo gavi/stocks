@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Analysis</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+    <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .form-group { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
+        input, select, button { padding: 8px; margin: 5px; }
+        .loading { display: none; color: #666; font-weight: bold; }
+        
+        /* Tab styles */
+        .tabs { margin: 20px 0; }
+        .tab-buttons { border-bottom: 2px solid #ddd; }
+        .tab-button { 
+            background: none; 
+            border: none; 
+            padding: 12px 20px; 
+            cursor: pointer; 
+            border-bottom: 3px solid transparent;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .tab-button.active { 
+            border-bottom-color: #007cba; 
+            color: #007cba; 
+        }
+        .tab-button:hover { 
+            background-color: #f0f0f0; 
+        }
+        .tab-button:disabled {
+            color: #ccc;
+            cursor: not-allowed;
+        }
+        .tab-button:disabled:hover {
+            background-color: transparent;
+        }
+        
+        .tab-content { 
+            min-height: 400px; 
+            padding: 20px 0; 
+        }
+        .tab-pane { 
+            display: none; 
+        }
+        .tab-pane.active { 
+            display: block; 
+        }
+        
+        .chart { margin: 20px 0; text-align: center; }
+        .stock-info { 
+            background-color: #f8f9fa; 
+            padding: 20px; 
+            border-radius: 5px; 
+            margin: 20px 0; 
+        }
+        .stock-info h2 { margin-top: 0; }
+        .stock-metrics { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 15px; 
+        }
+        .metric { 
+            background: white; 
+            padding: 10px; 
+            border-radius: 3px; 
+            border-left: 4px solid #007cba; 
+        }
+        
+        #stockTable { margin-top: 20px; }
+        
+        /* News styles */
+        .news-container { margin: 20px 0; }
+        .news-article { 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            margin: 15px 0; 
+            padding: 15px; 
+            background-color: white;
+            transition: box-shadow 0.3s ease;
+        }
+        .news-article:hover { 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+        }
+        .news-header { 
+            display: flex; 
+            align-items: flex-start; 
+            gap: 15px; 
+            margin-bottom: 10px; 
+        }
+        .news-thumbnail { 
+            width: 80px; 
+            height: 60px; 
+            object-fit: cover; 
+            border-radius: 3px; 
+            flex-shrink: 0;
+        }
+        .news-content { flex: 1; }
+        .news-title { 
+            font-size: 16px; 
+            font-weight: bold; 
+            margin: 0 0 8px 0; 
+            line-height: 1.4;
+        }
+        .news-title a { 
+            text-decoration: none; 
+            color: #333; 
+        }
+        .news-title a:hover { 
+            color: #007cba; 
+        }
+        .news-meta { 
+            font-size: 12px; 
+            color: #666; 
+            margin-bottom: 8px; 
+        }
+        .news-summary { 
+            font-size: 14px; 
+            color: #555; 
+            line-height: 1.5; 
+        }
+        .no-news { 
+            text-align: center; 
+            color: #666; 
+            padding: 40px; 
+            font-style: italic; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Stock Analysis Dashboard</h1>
+        
+        <div class="form-group">
+            <label>Stock Symbol:</label>
+            <input type="text" id="symbol" placeholder="e.g., AAPL" value="AAPL">
+            
+            <label>Period:</label>
+            <select id="period">
+                <option value="1mo">1 Month</option>
+                <option value="3mo" selected>3 Months</option>
+                <option value="6mo">6 Months</option>
+                <option value="1y">1 Year</option>
+                <option value="2y">2 Years</option>
+            </select>
+            
+            <button onclick="loadStockData()">Load Stock Data</button>
+        </div>
+        
+        <div class="loading" id="loading">Loading...</div>
+        
+        <div class="tabs" id="tabsContainer" style="display: none;">
+            <div class="tab-buttons">
+                <button class="tab-button active" data-tab="data">Stock Data</button>
+                <button class="tab-button" data-tab="macd" disabled>MACD</button>
+                <button class="tab-button" data-tab="rsi" disabled>RSI</button>
+                <button class="tab-button" data-tab="news" disabled>News</button>
+            </div>
+            
+            <div class="tab-content">
+                <div class="tab-pane active" id="data-tab">
+                    <div id="stockInfo"></div>
+                    <div id="dataTableContainer"></div>
+                </div>
+                
+                <div class="tab-pane" id="macd-tab">
+                    <div id="macdChart"></div>
+                </div>
+                
+                <div class="tab-pane" id="rsi-tab">
+                    <div id="rsiChart"></div>
+                </div>
+                
+                <div class="tab-pane" id="news-tab">
+                    <div id="newsContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStockData = null;
+        let stockTable = null;
+        
+        function showLoading() {
+            $('#loading').show();
+        }
+        
+        function hideLoading() {
+            $('#loading').hide();
+        }
+        
+        function resetTabs() {
+            // Hide tabs container
+            $('#tabsContainer').hide();
+            
+            // Reset tab states
+            $('.tab-button').removeClass('active').prop('disabled', true);
+            $('.tab-button[data-tab="data"]').addClass('active').prop('disabled', false);
+            $('.tab-pane').removeClass('active');
+            $('#data-tab').addClass('active');
+            
+            // Clear content
+            $('#stockInfo').empty();
+            $('#dataTableContainer').empty();
+            $('#macdChart').empty();
+            $('#rsiChart').empty();
+            $('#newsContainer').empty();
+            
+            // Destroy existing DataTable if it exists
+            if (stockTable) {
+                stockTable.destroy();
+                stockTable = null;
+            }
+        }
+        
+        function loadStockData() {
+            const symbol = $('#symbol').val();
+            const period = $('#period').val();
+            
+            if (!symbol) {
+                alert('Please enter a stock symbol');
+                return;
+            }
+            
+            // Reset everything when loading new stock
+            resetTabs();
+            showLoading();
+            
+            $.get(`/stock/${symbol}/${period}`)
+                .done(function(data) {
+                    currentStockData = data;
+                    displayStockInfo(data.info);
+                    displayDataTable(data.history);
+                    
+                    // Show tabs and enable all other tabs
+                    $('#tabsContainer').show();
+                    $('.tab-button[data-tab="macd"]').prop('disabled', false);
+                    $('.tab-button[data-tab="rsi"]').prop('disabled', false);
+                    $('.tab-button[data-tab="news"]').prop('disabled', false);
+                })
+                .fail(function() {
+                    alert('Error loading stock data');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
+        function loadMACD() {
+            const symbol = $('#symbol').val();
+            const period = $('#period').val();
+            
+            showLoading();
+            
+            $.get(`/macd/${symbol}/${period}`)
+                .done(function(data) {
+                    displayChart(data.chart, 'MACD Analysis', '#macdChart');
+                })
+                .fail(function() {
+                    alert('Error loading MACD data');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
+        function loadRSI() {
+            const symbol = $('#symbol').val();
+            const period = $('#period').val();
+            
+            showLoading();
+            
+            $.get(`/rsi/${symbol}/${period}`)
+                .done(function(data) {
+                    displayChart(data.chart, 'RSI Analysis', '#rsiChart');
+                })
+                .fail(function() {
+                    alert('Error loading RSI data');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
+        function loadNews() {
+            const symbol = $('#symbol').val();
+            
+            showLoading();
+            
+            $.get(`/news/${symbol}`)
+                .done(function(data) {
+                    displayNews(data.news);
+                })
+                .fail(function() {
+                    alert('Error loading news data');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
+        function displayStockInfo(info) {
+            const html = `
+                <div class="stock-info">
+                    <h2>${info.longName || info.shortName || 'N/A'} (${info.symbol})</h2>
+                    <div class="stock-metrics">
+                        <div class="metric">
+                            <strong>Current Price</strong><br>
+                            $${info.currentPrice || 'N/A'}
+                        </div>
+                        <div class="metric">
+                            <strong>Market Cap</strong><br>
+                            $${info.marketCap ? (info.marketCap / 1e9).toFixed(2) + 'B' : 'N/A'}
+                        </div>
+                        <div class="metric">
+                            <strong>52 Week High</strong><br>
+                            $${info.fiftyTwoWeekHigh || 'N/A'}
+                        </div>
+                        <div class="metric">
+                            <strong>52 Week Low</strong><br>
+                            $${info.fiftyTwoWeekLow || 'N/A'}
+                        </div>
+                    </div>
+                </div>
+            `;
+            $('#stockInfo').html(html);
+        }
+        
+        function displayChart(chartData, title, container) {
+            const html = `
+                <div class="chart">
+                    <h3>${title}</h3>
+                    <img src="data:image/png;base64,${chartData}" style="max-width: 100%;">
+                </div>
+            `;
+            $(container).html(html);
+        }
+        
+        function displayDataTable(history) {
+            const tableHtml = `
+                <h3>Price History</h3>
+                <table id="stockTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Open</th>
+                            <th>High</th>
+                            <th>Low</th>
+                            <th>Close</th>
+                            <th>Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            `;
+            
+            $('#dataTableContainer').html(tableHtml);
+            
+            // Prepare data for DataTable
+            const tableData = history.map(row => [
+                row.Date,
+                '$' + row.Open.toFixed(2),
+                '$' + row.High.toFixed(2),
+                '$' + row.Low.toFixed(2),
+                '$' + row.Close.toFixed(2),
+                row.Volume.toLocaleString()
+            ]);
+            
+            // Initialize DataTable
+            stockTable = $('#stockTable').DataTable({
+                data: tableData,
+                order: [[0, 'desc']], // Sort by date descending (newest first)
+                pageLength: 25,
+                responsive: true,
+                columnDefs: [
+                    { type: 'date', targets: 0 },
+                    { className: 'text-right', targets: [1, 2, 3, 4, 5] }
+                ]
+            });
+        }
+        
+        function displayNews(newsArticles) {
+            if (!newsArticles || newsArticles.length === 0) {
+                $('#newsContainer').html('<div class="no-news">No recent news available for this stock.</div>');
+                return;
+            }
+            
+            let newsHtml = '<div class="news-container"><h3>Latest News</h3>';
+            
+            newsArticles.forEach(article => {
+                const publishDate = article.publishTime ? new Date(article.publishTime * 1000).toLocaleDateString() : 'Unknown date';
+                const thumbnail = article.thumbnail ? 
+                    `<img src="${article.thumbnail}" alt="News thumbnail" class="news-thumbnail" onerror="this.style.display='none'">` : '';
+                
+                newsHtml += `
+                    <div class="news-article">
+                        <div class="news-header">
+                            ${thumbnail}
+                            <div class="news-content">
+                                <h4 class="news-title">
+                                    ${article.link ? `<a href="${article.link}" target="_blank">${article.title}</a>` : article.title}
+                                </h4>
+                                <div class="news-meta">
+                                    ${article.publisher} • ${publishDate}
+                                </div>
+                            </div>
+                        </div>
+                        ${article.summary ? `<div class="news-summary">${article.summary}</div>` : ''}
+                    </div>
+                `;
+            });
+            
+            newsHtml += '</div>';
+            $('#newsContainer').html(newsHtml);
+        }
+        
+        // Tab switching functionality
+        $(document).ready(function() {
+            $('.tab-button').click(function() {
+                if ($(this).prop('disabled')) return;
+                
+                const targetTab = $(this).data('tab');
+                
+                // Update button states
+                $('.tab-button').removeClass('active');
+                $(this).addClass('active');
+                
+                // Update tab panes
+                $('.tab-pane').removeClass('active');
+                $(`#${targetTab}-tab`).addClass('active');
+                
+                // Load data for the specific tab if not already loaded
+                if (targetTab === 'macd' && $('#macdChart').is(':empty')) {
+                    loadMACD();
+                } else if (targetTab === 'rsi' && $('#rsiChart').is(':empty')) {
+                    loadRSI();
+                } else if (targetTab === 'news' && $('#newsContainer').is(':empty')) {
+                    loadNews();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
