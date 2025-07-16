@@ -177,8 +177,8 @@
         <h1>Stock Analysis Dashboard</h1>
         
         <div class="form-group">
-            <label>Stock Symbol:</label>
-            <input type="text" id="symbol" placeholder="e.g., AAPL" value="AAPL">
+            <label>Stock Symbol(s):</label>
+            <input type="text" id="symbol" placeholder="e.g., AAPL or AAPL,MSFT,GOOGL" value="AAPL" style="width: 300px;">
             
             <label>Period:</label>
             <select id="period">
@@ -189,7 +189,7 @@
                 <option value="2y">2 Years</option>
             </select>
             
-            <button onclick="loadStockData()">Load Stock Data</button>
+            <button onclick="loadStockData()">Analyze Stocks</button>
         </div>
         
         <div class="loading" id="loading">Loading...</div>
@@ -197,9 +197,11 @@
         <div class="tabs" id="tabsContainer" style="display: none;">
             <div class="tab-buttons">
                 <button class="tab-button active" data-tab="data">Stock Data</button>
-                <button class="tab-button" data-tab="compare" disabled>Compare</button>
                 <button class="tab-button" data-tab="macd" disabled>MACD</button>
                 <button class="tab-button" data-tab="rsi" disabled>RSI</button>
+                <button class="tab-button" data-tab="correlation" disabled>Correlation</button>
+                <button class="tab-button" data-tab="portfolio" disabled>Portfolio</button>
+                <button class="tab-button" data-tab="volatility" disabled>Volatility</button>
                 <button class="tab-button" data-tab="news" disabled>News</button>
             </div>
             
@@ -209,22 +211,27 @@
                     <div id="dataTableContainer"></div>
                 </div>
                 
-                <div class="tab-pane" id="compare-tab">
-                    <div class="form-group">
-                        <label>Compare Stocks (comma-separated):</label>
-                        <input type="text" id="compareSymbols" placeholder="e.g., AAPL,MSFT,GOOGL" style="width: 300px;">
-                        <button onclick="loadComparison()">Compare Stocks</button>
-                    </div>
-                    <div id="comparisonResults"></div>
-                    <div id="comparisonChart"></div>
-                </div>
-                
                 <div class="tab-pane" id="macd-tab">
                     <div id="macdChart"></div>
                 </div>
                 
                 <div class="tab-pane" id="rsi-tab">
                     <div id="rsiChart"></div>
+                </div>
+                
+                <div class="tab-pane" id="correlation-tab">
+                    <div id="correlationChart"></div>
+                    <div id="correlationTable"></div>
+                </div>
+                
+                <div class="tab-pane" id="portfolio-tab">
+                    <div id="portfolioAnalysis"></div>
+                    <div id="portfolioChart"></div>
+                </div>
+                
+                <div class="tab-pane" id="volatility-tab">
+                    <div id="volatilityChart"></div>
+                    <div id="volatilityTable"></div>
                 </div>
                 
                 <div class="tab-pane" id="news-tab">
@@ -263,6 +270,12 @@
             $('#comparisonChart').empty();
             $('#macdChart').empty();
             $('#rsiChart').empty();
+            $('#correlationChart').empty();
+            $('#correlationTable').empty();
+            $('#portfolioAnalysis').empty();
+            $('#portfolioChart').empty();
+            $('#volatilityChart').empty();
+            $('#volatilityTable').empty();
             $('#newsContainer').empty();
             
             // Destroy existing DataTable if it exists
@@ -273,11 +286,11 @@
         }
         
         function loadStockData() {
-            const symbol = $('#symbol').val();
+            const symbols = $('#symbol').val().trim();
             const period = $('#period').val();
             
-            if (!symbol) {
-                alert('Please enter a stock symbol');
+            if (!symbols) {
+                alert('Please enter stock symbol(s)');
                 return;
             }
             
@@ -285,6 +298,17 @@
             resetTabs();
             showLoading();
             
+            // Check if multiple symbols (contains comma)
+            if (symbols.includes(',')) {
+                // Multiple stocks - load comparison view
+                loadMultipleStocks(symbols, period);
+            } else {
+                // Single stock - load individual view
+                loadSingleStock(symbols, period);
+            }
+        }
+        
+        function loadSingleStock(symbol, period) {
             $.get(`/stock/${symbol}/${period}`)
                 .done(function(data) {
                     currentStockData = data;
@@ -293,7 +317,6 @@
                     
                     // Show tabs and enable all other tabs
                     $('#tabsContainer').show();
-                    $('.tab-button[data-tab="compare"]').prop('disabled', false);
                     $('.tab-button[data-tab="macd"]').prop('disabled', false);
                     $('.tab-button[data-tab="rsi"]').prop('disabled', false);
                     $('.tab-button[data-tab="news"]').prop('disabled', false);
@@ -306,13 +329,68 @@
                 });
         }
         
+        function loadMultipleStocks(symbols, period) {
+            // Clean up the symbols string - remove extra spaces
+            const cleanSymbols = symbols.split(',').map(s => s.trim()).filter(s => s.length > 0).join(',');
+            
+            console.log('Loading comparison for symbols:', cleanSymbols);
+            
+            // Load comparison data first
+            $.get(`/compare/${cleanSymbols}/${period}`)
+                .done(function(data) {
+                    console.log('Comparison data received:', data);
+                    
+                    // Display comparison cards
+                    displayComparison(data.stocks);
+                    
+                    // Create comparison data table
+                    displayComparisonTable(data.stocks);
+                    
+                    // Display general info about the comparison
+                    displayComparisonInfo(data.stocks, data.period);
+                    
+                    // Now load the chart
+                    $.get(`/compare/chart/${cleanSymbols}/${period}`)
+                        .done(function(chartData) {
+                            console.log('Chart data received:', chartData);
+                            displayChart(chartData.chart, 'Stock Comparison', '#comparisonChart');
+                        })
+                        .fail(function(error) {
+                            console.error('Chart loading error:', error);
+                            $('#comparisonChart').html('<div class="no-news">Error loading comparison chart</div>');
+                        });
+                    
+                    // Show tabs - enable multi-stock analysis tabs, disable single-stock tabs
+                    $('#tabsContainer').show();
+                    $('.tab-button[data-tab="macd"]').prop('disabled', true);
+                    $('.tab-button[data-tab="rsi"]').prop('disabled', true);
+                    $('.tab-button[data-tab="news"]').prop('disabled', true);
+                    $('.tab-button[data-tab="correlation"]').prop('disabled', false);
+                    $('.tab-button[data-tab="portfolio"]').prop('disabled', false);
+                    $('.tab-button[data-tab="volatility"]').prop('disabled', false);
+                })
+                .fail(function(error) {
+                    console.error('Comparison data error:', error);
+                    alert('Error loading comparison data: ' + (error.responseJSON?.detail || error.statusText));
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
         function loadMACD() {
-            const symbol = $('#symbol').val();
+            const symbols = $('#symbol').val().trim();
             const period = $('#period').val();
+            
+            // Only allow MACD for single stock
+            if (symbols.includes(',')) {
+                alert('MACD analysis is only available for single stocks');
+                return;
+            }
             
             showLoading();
             
-            $.get(`/macd/${symbol}/${period}`)
+            $.get(`/macd/${symbols}/${period}`)
                 .done(function(data) {
                     displayChart(data.chart, 'MACD Analysis', '#macdChart');
                 })
@@ -325,12 +403,18 @@
         }
         
         function loadRSI() {
-            const symbol = $('#symbol').val();
+            const symbols = $('#symbol').val().trim();
             const period = $('#period').val();
+            
+            // Only allow RSI for single stock
+            if (symbols.includes(',')) {
+                alert('RSI analysis is only available for single stocks');
+                return;
+            }
             
             showLoading();
             
-            $.get(`/rsi/${symbol}/${period}`)
+            $.get(`/rsi/${symbols}/${period}`)
                 .done(function(data) {
                     displayChart(data.chart, 'RSI Analysis', '#rsiChart');
                 })
@@ -343,11 +427,17 @@
         }
         
         function loadNews() {
-            const symbol = $('#symbol').val();
+            const symbols = $('#symbol').val().trim();
+            
+            // Only allow news for single stock
+            if (symbols.includes(',')) {
+                alert('News is only available for single stocks');
+                return;
+            }
             
             showLoading();
             
-            $.get(`/news/${symbol}`)
+            $.get(`/news/${symbols}`)
                 .done(function(data) {
                     displayNews(data.news);
                 })
@@ -359,34 +449,84 @@
                 });
         }
         
-        function loadComparison() {
-            const symbols = $('#compareSymbols').val();
+        function loadCorrelation() {
+            const symbols = $('#symbol').val().trim();
             const period = $('#period').val();
             
-            if (!symbols) {
-                alert('Please enter stock symbols separated by commas');
+            if (!symbols.includes(',')) {
+                alert('Correlation analysis requires multiple stocks');
                 return;
             }
             
+            const cleanSymbols = symbols.split(',').map(s => s.trim()).filter(s => s.length > 0).join(',');
+            
             showLoading();
             
-            // Load comparison data and chart in parallel
-            Promise.all([
-                $.get(`/compare/${symbols}/${period}`),
-                $.get(`/compare/chart/${symbols}/${period}`)
-            ])
-            .then(([data, chartData]) => {
-                displayComparison(data.stocks);
-                displayChart(chartData.chart, 'Stock Comparison', '#comparisonChart');
-            })
-            .catch(error => {
-                alert('Error loading comparison data');
-                console.error(error);
-            })
-            .finally(() => {
-                hideLoading();
-            });
+            $.get(`/correlation/${cleanSymbols}/${period}`)
+                .done(function(data) {
+                    displayCorrelationAnalysis(data);
+                })
+                .fail(function(error) {
+                    console.error('Correlation analysis error:', error);
+                    $('#correlationChart').html('<div class="no-news">Error loading correlation analysis</div>');
+                })
+                .always(function() {
+                    hideLoading();
+                });
         }
+        
+        function loadPortfolio() {
+            const symbols = $('#symbol').val().trim();
+            const period = $('#period').val();
+            
+            if (!symbols.includes(',')) {
+                alert('Portfolio analysis requires multiple stocks');
+                return;
+            }
+            
+            const cleanSymbols = symbols.split(',').map(s => s.trim()).filter(s => s.length > 0).join(',');
+            
+            showLoading();
+            
+            $.get(`/portfolio/${cleanSymbols}/${period}`)
+                .done(function(data) {
+                    displayPortfolioAnalysis(data);
+                })
+                .fail(function(error) {
+                    console.error('Portfolio analysis error:', error);
+                    $('#portfolioAnalysis').html('<div class="no-news">Error loading portfolio analysis</div>');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
+        function loadVolatility() {
+            const symbols = $('#symbol').val().trim();
+            const period = $('#period').val();
+            
+            if (!symbols.includes(',')) {
+                alert('Volatility analysis requires multiple stocks');
+                return;
+            }
+            
+            const cleanSymbols = symbols.split(',').map(s => s.trim()).filter(s => s.length > 0).join(',');
+            
+            showLoading();
+            
+            $.get(`/volatility/${cleanSymbols}/${period}`)
+                .done(function(data) {
+                    displayVolatilityAnalysis(data);
+                })
+                .fail(function(error) {
+                    console.error('Volatility analysis error:', error);
+                    $('#volatilityChart').html('<div class="no-news">Error loading volatility analysis</div>');
+                })
+                .always(function() {
+                    hideLoading();
+                });
+        }
+        
         
         function displayComparison(stocks) {
             if (!stocks || stocks.length === 0) {
@@ -436,6 +576,238 @@
             
             html += '</div></div>';
             $('#comparisonResults').html(html);
+        }
+        
+        function displayComparisonInfo(stocks, period) {
+            const stockNames = stocks.map(stock => `${stock.symbol} (${stock.name})`).join(', ');
+            const html = `
+                <div class="stock-info">
+                    <h2>Stock Comparison Analysis</h2>
+                    <div class="stock-metrics">
+                        <div class="metric">
+                            <strong>Stocks Compared</strong><br>
+                            ${stockNames}
+                        </div>
+                        <div class="metric">
+                            <strong>Analysis Period</strong><br>
+                            ${period}
+                        </div>
+                        <div class="metric">
+                            <strong>Total Stocks</strong><br>
+                            ${stocks.length}
+                        </div>
+                        <div class="metric">
+                            <strong>Best Performer</strong><br>
+                            ${stocks.reduce((best, stock) => stock.change_percent > best.change_percent ? stock : best).symbol}
+                            (${stocks.reduce((best, stock) => stock.change_percent > best.change_percent ? stock : best).change_percent.toFixed(2)}%)
+                        </div>
+                    </div>
+                </div>
+            `;
+            $('#stockInfo').html(html);
+        }
+        
+        function displayComparisonTable(stocks) {
+            if (!stocks || stocks.length === 0) {
+                $('#dataTableContainer').html('<div class="no-news">No stock data available for table.</div>');
+                return;
+            }
+            
+            // Get all unique dates from all stocks
+            const allDates = new Set();
+            stocks.forEach(stock => {
+                stock.history.forEach(day => allDates.add(day.date));
+            });
+            
+            const sortedDates = Array.from(allDates).sort().reverse(); // Most recent first
+            
+            const tableHtml = `
+                <h3>Price History Comparison</h3>
+                <table id="stockTable" class="display" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            ${stocks.map(stock => `<th>${stock.symbol} Price</th>`).join('')}
+                            ${stocks.map(stock => `<th>${stock.symbol} Change %</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            `;
+            
+            $('#dataTableContainer').html(tableHtml);
+            
+            // Prepare data for DataTable
+            const tableData = sortedDates.slice(0, 50).map(date => { // Limit to 50 most recent days
+                const row = [date];
+                
+                // Add price columns
+                stocks.forEach(stock => {
+                    const dayData = stock.history.find(day => day.date === date);
+                    row.push(dayData ? '$' + dayData.close.toFixed(2) : 'N/A');
+                });
+                
+                // Add change % columns
+                stocks.forEach(stock => {
+                    const dayData = stock.history.find(day => day.date === date);
+                    if (dayData) {
+                        const changePercent = dayData.normalized;
+                        const changeClass = changePercent >= 0 ? 'change-positive' : 'change-negative';
+                        const changeSign = changePercent >= 0 ? '+' : '';
+                        row.push(`<span class="${changeClass}">${changeSign}${changePercent.toFixed(2)}%</span>`);
+                    } else {
+                        row.push('N/A');
+                    }
+                });
+                
+                return row;
+            });
+            
+            // Initialize DataTable
+            stockTable = $('#stockTable').DataTable({
+                data: tableData,
+                order: [[0, 'desc']], // Sort by date descending
+                pageLength: 25,
+                responsive: true,
+                columnDefs: [
+                    { type: 'date', targets: 0 },
+                    { className: 'text-right', targets: '_all' }
+                ]
+            });
+        }
+        
+        function displayCorrelationAnalysis(data) {
+            // Display correlation matrix
+            if (data.correlation_matrix) {
+                let html = '<div class="analysis-container"><h3>Correlation Analysis</h3>';
+                html += '<p>Correlation measures how stocks move together. Values closer to 1 indicate positive correlation, -1 indicates negative correlation, and 0 indicates no correlation.</p>';
+                html += '<table class="correlation-matrix" style="width: 100%; border-collapse: collapse; margin: 20px 0;">';
+                
+                const symbols = Object.keys(data.correlation_matrix);
+                
+                // Header row
+                html += '<tr><th style="border: 1px solid #ddd; padding: 8px; background: #f5f5f5;"></th>';
+                symbols.forEach(symbol => {
+                    html += `<th style="border: 1px solid #ddd; padding: 8px; background: #f5f5f5;">${symbol}</th>`;
+                });
+                html += '</tr>';
+                
+                // Data rows
+                symbols.forEach(symbol1 => {
+                    html += `<tr><th style="border: 1px solid #ddd; padding: 8px; background: #f5f5f5;">${symbol1}</th>`;
+                    symbols.forEach(symbol2 => {
+                        const correlation = data.correlation_matrix[symbol1][symbol2];
+                        const color = correlation > 0.7 ? '#28a745' : correlation < -0.7 ? '#dc3545' : '#6c757d';
+                        html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; color: ${color}; font-weight: bold;">${correlation.toFixed(3)}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</table></div>';
+                $('#correlationTable').html(html);
+            }
+            
+            // Display correlation chart
+            if (data.chart) {
+                displayChart(data.chart, 'Correlation Heatmap', '#correlationChart');
+            }
+        }
+        
+        function displayPortfolioAnalysis(data) {
+            let html = '<div class="analysis-container"><h3>Portfolio Analysis</h3>';
+            
+            if (data.portfolio_metrics) {
+                html += '<div class="portfolio-metrics" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0;">';
+                
+                html += `
+                    <div class="metric-card" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">Portfolio Return</h4>
+                        <div style="font-size: 24px; font-weight: bold; color: ${data.portfolio_metrics.total_return >= 0 ? '#28a745' : '#dc3545'};">
+                            ${data.portfolio_metrics.total_return >= 0 ? '+' : ''}${data.portfolio_metrics.total_return.toFixed(2)}%
+                        </div>
+                        <div style="font-size: 12px; color: #666;">Over ${data.period}</div>
+                    </div>
+                    
+                    <div class="metric-card" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">Portfolio Volatility</h4>
+                        <div style="font-size: 24px; font-weight: bold; color: #6c757d;">
+                            ${data.portfolio_metrics.volatility.toFixed(2)}%
+                        </div>
+                        <div style="font-size: 12px; color: #666;">Annualized</div>
+                    </div>
+                    
+                    <div class="metric-card" style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">Sharpe Ratio</h4>
+                        <div style="font-size: 24px; font-weight: bold; color: #007cba;">
+                            ${data.portfolio_metrics.sharpe_ratio.toFixed(2)}
+                        </div>
+                        <div style="font-size: 12px; color: #666;">Risk-adjusted return</div>
+                    </div>
+                `;
+                
+                html += '</div>';
+                
+                // Best and worst performers
+                if (data.portfolio_metrics.best_performer && data.portfolio_metrics.worst_performer) {
+                    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">';
+                    html += `
+                        <div style="background: #d4edda; padding: 15px; border-radius: 8px; border: 1px solid #c3e6cb;">
+                            <h4 style="margin: 0 0 10px 0; color: #155724;">Best Performer</h4>
+                            <div style="font-weight: bold;">${data.portfolio_metrics.best_performer.symbol}</div>
+                            <div style="color: #28a745;">+${data.portfolio_metrics.best_performer.return.toFixed(2)}%</div>
+                        </div>
+                        
+                        <div style="background: #f8d7da; padding: 15px; border-radius: 8px; border: 1px solid #f1b0b7;">
+                            <h4 style="margin: 0 0 10px 0; color: #721c24;">Worst Performer</h4>
+                            <div style="font-weight: bold;">${data.portfolio_metrics.worst_performer.symbol}</div>
+                            <div style="color: #dc3545;">${data.portfolio_metrics.worst_performer.return.toFixed(2)}%</div>
+                        </div>
+                    `;
+                    html += '</div>';
+                }
+            }
+            
+            html += '</div>';
+            $('#portfolioAnalysis').html(html);
+            
+            // Display portfolio chart
+            if (data.chart) {
+                displayChart(data.chart, 'Portfolio Performance vs Individual Stocks', '#portfolioChart');
+            }
+        }
+        
+        function displayVolatilityAnalysis(data) {
+            let html = '<div class="analysis-container"><h3>Volatility Analysis</h3>';
+            html += '<p>Volatility measures the degree of price fluctuation. Higher volatility indicates more price swings and higher risk.</p>';
+            
+            if (data.volatility_metrics) {
+                html += '<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">';
+                html += '<tr><th style="border: 1px solid #ddd; padding: 12px; background: #f5f5f5;">Symbol</th>';
+                html += '<th style="border: 1px solid #ddd; padding: 12px; background: #f5f5f5;">Volatility (%)</th>';
+                html += '<th style="border: 1px solid #ddd; padding: 12px; background: #f5f5f5;">Risk Level</th></tr>';
+                
+                data.volatility_metrics.forEach(stock => {
+                    const riskLevel = stock.volatility > 30 ? 'High' : stock.volatility > 20 ? 'Medium' : 'Low';
+                    const riskColor = stock.volatility > 30 ? '#dc3545' : stock.volatility > 20 ? '#ffc107' : '#28a745';
+                    
+                    html += `<tr>
+                        <td style="border: 1px solid #ddd; padding: 12px; font-weight: bold;">${stock.symbol}</td>
+                        <td style="border: 1px solid #ddd; padding: 12px; text-align: center;">${stock.volatility.toFixed(2)}%</td>
+                        <td style="border: 1px solid #ddd; padding: 12px; text-align: center; color: ${riskColor}; font-weight: bold;">${riskLevel}</td>
+                    </tr>`;
+                });
+                
+                html += '</table>';
+            }
+            
+            html += '</div>';
+            $('#volatilityTable').html(html);
+            
+            // Display volatility chart
+            if (data.chart) {
+                displayChart(data.chart, 'Volatility Comparison', '#volatilityChart');
+            }
         }
         
         function displayStockInfo(info) {
@@ -576,6 +948,12 @@
                     loadRSI();
                 } else if (targetTab === 'news' && $('#newsContainer').is(':empty')) {
                     loadNews();
+                } else if (targetTab === 'correlation' && $('#correlationChart').is(':empty')) {
+                    loadCorrelation();
+                } else if (targetTab === 'portfolio' && $('#portfolioAnalysis').is(':empty')) {
+                    loadPortfolio();
+                } else if (targetTab === 'volatility' && $('#volatilityChart').is(':empty')) {
+                    loadVolatility();
                 }
             });
         });

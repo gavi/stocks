@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
 import ta
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -333,6 +335,244 @@ async def get_stock_news(symbol: str):
         }
     except Exception as e:
         print(f"Error getting news: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/correlation/{symbols}/{period}")
+async def get_correlation_analysis(symbols: str, period: str = "3mo"):
+    """Analyze correlation between multiple stocks."""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        
+        if len(symbol_list) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 symbols required for correlation analysis")
+        
+        # Get stock data
+        stock_data = {}
+        for symbol in symbol_list:
+            try:
+                ticker = yf.Ticker(symbol)
+                history = ticker.history(period=period)
+                if not history.empty:
+                    stock_data[symbol] = history['Close']
+            except Exception as e:
+                print(f"Error fetching {symbol}: {e}")
+                continue
+        
+        if len(stock_data) < 2:
+            raise HTTPException(status_code=404, detail="Not enough valid stock data for correlation analysis")
+        
+        # Create DataFrame with all stocks
+        df = pd.DataFrame(stock_data)
+        
+        # Calculate correlation matrix
+        correlation_matrix = df.corr()
+        
+        # Create heatmap
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(correlation_matrix, annot=True, cmap='RdBu_r', center=0, 
+                   square=True, fmt='.3f', cbar_kws={"shrink": .8})
+        plt.title('Stock Correlation Matrix', fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        # Convert to base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        plt.close()
+        
+        return {
+            "correlation_matrix": correlation_matrix.to_dict(),
+            "chart": img_base64
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/portfolio/{symbols}/{period}")
+async def get_portfolio_analysis(symbols: str, period: str = "3mo"):
+    """Analyze portfolio performance and risk metrics."""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        
+        if len(symbol_list) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 symbols required for portfolio analysis")
+        
+        # Get stock data
+        stock_data = {}
+        stock_returns = {}
+        
+        for symbol in symbol_list:
+            try:
+                ticker = yf.Ticker(symbol)
+                history = ticker.history(period=period)
+                if not history.empty:
+                    stock_data[symbol] = history['Close']
+                    stock_returns[symbol] = history['Close'].pct_change().dropna()
+            except Exception as e:
+                print(f"Error fetching {symbol}: {e}")
+                continue
+        
+        if len(stock_data) < 2:
+            raise HTTPException(status_code=404, detail="Not enough valid stock data for portfolio analysis")
+        
+        # Create equal-weight portfolio (you could make this configurable)
+        weights = np.array([1/len(stock_data)] * len(stock_data))
+        
+        # Calculate portfolio metrics
+        returns_df = pd.DataFrame(stock_returns)
+        returns_df = returns_df.dropna()
+        
+        # Portfolio return
+        portfolio_returns = (returns_df * weights).sum(axis=1)
+        total_return = ((1 + portfolio_returns).cumprod().iloc[-1] - 1) * 100
+        
+        # Portfolio volatility (annualized)
+        portfolio_volatility = portfolio_returns.std() * np.sqrt(252) * 100
+        
+        # Sharpe ratio (assuming risk-free rate of 2%)
+        risk_free_rate = 0.02
+        excess_return = portfolio_returns.mean() * 252 - risk_free_rate
+        sharpe_ratio = excess_return / (portfolio_returns.std() * np.sqrt(252))
+        
+        # Best and worst performers
+        individual_returns = {}
+        for symbol in stock_data.keys():
+            individual_returns[symbol] = ((stock_data[symbol].iloc[-1] / stock_data[symbol].iloc[0]) - 1) * 100
+        
+        best_performer = max(individual_returns.items(), key=lambda x: x[1])
+        worst_performer = min(individual_returns.items(), key=lambda x: x[1])
+        
+        # Create performance chart
+        plt.figure(figsize=(12, 8))
+        
+        # Plot individual stocks
+        for symbol, prices in stock_data.items():
+            normalized_prices = (prices / prices.iloc[0]) * 100
+            plt.plot(prices.index, normalized_prices, label=f'{symbol}', linewidth=2, alpha=0.7)
+        
+        # Plot portfolio
+        portfolio_df = pd.DataFrame(stock_data)
+        portfolio_normalized = (portfolio_df / portfolio_df.iloc[0]) * 100
+        portfolio_performance = (portfolio_normalized * weights).sum(axis=1)
+        plt.plot(portfolio_df.index, portfolio_performance, label='Equal-Weight Portfolio', 
+                linewidth=3, color='black', linestyle='--')
+        
+        plt.title('Portfolio vs Individual Stock Performance', fontsize=16, fontweight='bold')
+        plt.xlabel('Date')
+        plt.ylabel('Normalized Price (Base = 100)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Convert to base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        plt.close()
+        
+        return {
+            "portfolio_metrics": {
+                "total_return": float(total_return),
+                "volatility": float(portfolio_volatility),
+                "sharpe_ratio": float(sharpe_ratio),
+                "best_performer": {
+                    "symbol": best_performer[0],
+                    "return": float(best_performer[1])
+                },
+                "worst_performer": {
+                    "symbol": worst_performer[0],
+                    "return": float(worst_performer[1])
+                }
+            },
+            "period": period,
+            "chart": img_base64
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/volatility/{symbols}/{period}")
+async def get_volatility_analysis(symbols: str, period: str = "3mo"):
+    """Analyze volatility comparison between stocks."""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        
+        if len(symbol_list) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 symbols required for volatility analysis")
+        
+        # Get stock data and calculate volatility
+        volatility_data = []
+        stock_returns = {}
+        
+        for symbol in symbol_list:
+            try:
+                ticker = yf.Ticker(symbol)
+                history = ticker.history(period=period)
+                if not history.empty:
+                    returns = history['Close'].pct_change().dropna()
+                    volatility = returns.std() * np.sqrt(252) * 100  # Annualized volatility
+                    
+                    volatility_data.append({
+                        "symbol": symbol,
+                        "volatility": float(volatility)
+                    })
+                    stock_returns[symbol] = returns
+            except Exception as e:
+                print(f"Error fetching {symbol}: {e}")
+                continue
+        
+        if len(volatility_data) < 2:
+            raise HTTPException(status_code=404, detail="Not enough valid stock data for volatility analysis")
+        
+        # Create volatility comparison chart
+        plt.figure(figsize=(12, 8))
+        
+        # Bar chart of volatilities
+        symbols = [item['symbol'] for item in volatility_data]
+        volatilities = [item['volatility'] for item in volatility_data]
+        
+        colors = ['#dc3545' if v > 30 else '#ffc107' if v > 20 else '#28a745' for v in volatilities]
+        
+        plt.subplot(2, 1, 1)
+        bars = plt.bar(symbols, volatilities, color=colors, alpha=0.7)
+        plt.title('Annualized Volatility Comparison', fontsize=14, fontweight='bold')
+        plt.ylabel('Volatility (%)')
+        plt.grid(True, alpha=0.3)
+        
+        # Add value labels on bars
+        for bar, vol in zip(bars, volatilities):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'{vol:.1f}%', ha='center', va='bottom', fontweight='bold')
+        
+        # Rolling volatility over time
+        plt.subplot(2, 1, 2)
+        for symbol in stock_returns.keys():
+            rolling_vol = stock_returns[symbol].rolling(window=20).std() * np.sqrt(252) * 100
+            plt.plot(rolling_vol.index, rolling_vol, label=f'{symbol}', linewidth=2)
+        
+        plt.title('Rolling 20-Day Volatility', fontsize=14, fontweight='bold')
+        plt.xlabel('Date')
+        plt.ylabel('Volatility (%)')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Convert to base64
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        plt.close()
+        
+        return {
+            "volatility_metrics": volatility_data,
+            "chart": img_base64
+        }
+        
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
